@@ -25,14 +25,8 @@ body:
       required: true
   - type: textarea
     attributes:
-      label: Describe the bug
-      description: Description of what the bug is. Please include steps on how to reproduce the behaviour.
-    validations:
-      required: true
-  - type: textarea
-    attributes:
-      label: Expected behavior
-      description: Description of what you expected to happen.
+      label: Bug Description
+      description: Please describe the bug. Include steps on how to reproduce the behaviour, actual and expected results.
     validations:
       required: true
   - id: logs
