@@ -6,7 +6,6 @@ description: "File a bug report for any of the JetBrains IDEs: IntelliJ, Goland,
 title: "bug: "
 labels:
   - bug
-  - team/jetbrains
 projects:
   - sourcegraph/381
 body:
@@ -26,7 +25,7 @@ body:
   - type: textarea
     attributes:
       label: Bug Description
-      description: Please describe the bug. Include steps on how to reproduce the behaviour, actual and expected results.
+      description: Please describe the bug. Include steps for reproducing the behavior and actual and expected results.
     validations:
       required: true
   - id: logs
