@@ -16,7 +16,8 @@ body:
         Thanks for taking the time to fill out this bug report! Please include as much information as possible to help us fix the issue. 
 
         Tip: You can attach images or videos by dragging it into the text box.
-  - type: input
+  - id: version
+    type: input
     attributes:
       label: Cody Version
       description: Please specify the exact Cody extension version you're reporting for.
