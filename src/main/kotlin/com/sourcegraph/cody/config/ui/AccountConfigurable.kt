@@ -15,6 +15,7 @@ import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.gridLayout.HorizontalAlign
 import com.intellij.ui.dsl.gridLayout.VerticalAlign
 import com.intellij.util.ui.EmptyIcon
+import com.sourcegraph.cody.auth.Account
 import com.sourcegraph.cody.auth.ui.customAccountsPanel
 import com.sourcegraph.cody.config.CodyAccountDetailsProvider
 import com.sourcegraph.cody.config.CodyAccountListModel
@@ -22,7 +23,6 @@ import com.sourcegraph.cody.config.CodyAccountManager
 import com.sourcegraph.cody.config.CodyAccountsHost
 import com.sourcegraph.cody.config.CodyApplicationSettings
 import com.sourcegraph.cody.config.CodyAuthenticationManager
-import com.sourcegraph.cody.config.CodyProjectActiveAccountHolder
 import com.sourcegraph.cody.config.SettingsModel
 import com.sourcegraph.cody.config.getFirstAccountOrNull
 import com.sourcegraph.config.ConfigUtil
@@ -32,12 +32,21 @@ class AccountConfigurable(val project: Project) :
     BoundConfigurable(ConfigUtil.SOURCEGRAPH_DISPLAY_NAME) {
   private val accountManager = service<CodyAccountManager>()
   private val accountsModel = CodyAccountListModel(project)
-  private val activeAccountHolder = project.service<CodyProjectActiveAccountHolder>()
   private lateinit var dialogPanel: DialogPanel
   private var channel: UpdateChannel = findConfiguredChannel()
   private val codyApplicationSettings = service<CodyApplicationSettings>()
   private val settingsModel =
       SettingsModel(shouldCheckForUpdates = codyApplicationSettings.shouldCheckForUpdates)
+  private val authManager = CodyAuthenticationManager.getInstance(project)
+
+  private val initialActiveAccount: Account?
+  private val initialToken: String?
+
+  init {
+    initialActiveAccount = authManager.account
+    initialToken =
+        initialActiveAccount?.let { authManager.getTokenForAccount(initialActiveAccount) }
+  }
 
   override fun createPanel(): DialogPanel {
     dialogPanel = panel {
@@ -45,7 +54,7 @@ class AccountConfigurable(val project: Project) :
         row {
           customAccountsPanel(
                   accountManager,
-                  activeAccountHolder,
+                  authManager,
                   accountsModel,
                   CodyAccountDetailsProvider(
                       ProgressIndicatorsProvider().also { Disposer.register(disposable!!, it) },

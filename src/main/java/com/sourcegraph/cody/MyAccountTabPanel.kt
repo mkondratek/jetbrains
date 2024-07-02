@@ -82,7 +82,7 @@ class MyAccountTabPanel(val project: Project) : JPanel() {
       }
       button("Manage Account") {
         val manageUrl = "${ConfigUtil.DOTCOM_URL}" + "cody/manage"
-        val account = CodyAuthenticationManager.getInstance(project).getActiveAccount()
+        val account = CodyAuthenticationManager.getInstance(project).account
         if (account != null) {
           BrowserUtil.browse(
               manageUrl + "?cody_client_user=" + URLEncoder.encode(account.name, "UTF-8"))
@@ -108,7 +108,7 @@ class MyAccountTabPanel(val project: Project) : JPanel() {
     if (chatLimitError != null || autocompleteLimitError != null) {
       this.add(createRateLimitPanel(), BorderLayout.PAGE_START)
     }
-    var accountTier =
+    val accountTier =
         CodyAuthenticationManager.getInstance(project).getActiveAccountTier().getNow(null)
     this.add(createCenterPanel(accountTier))
 

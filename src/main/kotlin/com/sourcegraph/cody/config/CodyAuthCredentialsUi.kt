@@ -13,10 +13,8 @@ import com.sourcegraph.cody.auth.SourcegraphAuthService
 import com.sourcegraph.cody.auth.SsoAuthMethod
 import javax.swing.JComponent
 
-class CodyAuthCredentialsUi(
-    val factory: SourcegraphApiRequestExecutor.Factory,
-    val isAccountUnique: UniqueLoginPredicate
-) : CodyCredentialsUi() {
+class CodyAuthCredentialsUi(val factory: SourcegraphApiRequestExecutor.Factory) :
+    CodyCredentialsUi() {
 
   override fun getPreferredFocusableComponent(): JComponent? = null
 
@@ -33,8 +31,8 @@ class CodyAuthCredentialsUi(
     val token = acquireToken(indicator, authMethod)
     // The token has changed, so create a new executor to talk to the same server with the new
     // token.
-    val executor = factory.create(executor.server, token)
-    val details = CodyTokenCredentialsUi.acquireDetails(executor, indicator, isAccountUnique, null)
+    val newExecutor = factory.create(executor.server, token)
+    val details = CodyTokenCredentialsUi.acquireDetails(newExecutor, indicator, null)
     return details to token
   }
 
@@ -47,7 +45,7 @@ class CodyAuthCredentialsUi(
     row {
       val progressLabel =
           JBLabel("Logging in, check your browser").apply {
-            icon = AnimatedIcon.Default()
+            icon = AnimatedIcon.Default.INSTANCE
             foreground = getInactiveTextColor()
           }
       cell(progressLabel)

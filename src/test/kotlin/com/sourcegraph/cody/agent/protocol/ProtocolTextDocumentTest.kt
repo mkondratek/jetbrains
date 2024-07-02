@@ -1,6 +1,8 @@
 package com.sourcegraph.cody.agent.protocol
 
 import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.fileEditor.FileEditorProvider
+import com.intellij.openapi.fileEditor.impl.text.TextEditorProvider
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.sourcegraph.cody.listeners.EditorChangesBus
@@ -13,7 +15,15 @@ class ProtocolTextDocumentTest : BasePlatformTestCase() {
 
   override fun setUp() {
     super.setUp()
+    // We need to specify the provider so that the created editor has EditorKind.MAIN_EDITOR.
+    // Without putting that data, the default is UNTYPED - that breaks some tests.
+    file.putUserData(FileEditorProvider.KEY, TextEditorProvider.getInstance())
     myFixture.openFileInEditor(file)
+  }
+
+  override fun tearDown() {
+    EditorChangesBus.listeners = emptyList()
+    super.tearDown()
   }
 
   fun test_emptySelection() {

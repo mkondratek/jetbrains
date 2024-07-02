@@ -1,6 +1,7 @@
 package com.sourcegraph.cody.chat.ui
 
 import com.intellij.ide.ui.laf.darcula.ui.DarculaButtonUI
+import com.intellij.openapi.project.Project
 import com.intellij.ui.ColorUtil
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
@@ -13,12 +14,18 @@ import com.sourcegraph.cody.ui.HtmlViewer.createHtmlViewer
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.event.ActionListener
-import javax.swing.*
+import javax.swing.BorderFactory
+import javax.swing.BoxLayout
+import javax.swing.Icon
+import javax.swing.JButton
+import javax.swing.JComponent
+import javax.swing.JEditorPane
+import javax.swing.JPanel
 import javax.swing.text.html.HTMLEditorKit
 
-class CodyOnboardingGuidancePanel(val originalDisplayName: String?) : JPanel() {
+class CodyOnboardingGuidancePanel(val project: Project) : JPanel() {
 
-  private val userDisplayName: String? = originalDisplayName?.let { truncateDisplayName(it) }
+  private val createIntroductionMessage: JEditorPane = createIntroductionMessage()
 
   private val mainButton: JButton = createMainButton("Get started")
 
@@ -38,14 +45,24 @@ class CodyOnboardingGuidancePanel(val originalDisplayName: String?) : JPanel() {
     scrollPanel.setBorder(BorderFactory.createEmptyBorder())
 
     val buttonPanel = createGetStartedButton()
-    this.border = JBUI.Borders.empty(PADDING)
-    this.layout = BoxLayout(this, BoxLayout.Y_AXIS)
-    this.add(createIntroductionMessage())
-    this.add(scrollPanel)
-    this.add(buttonPanel)
+    border = JBUI.Borders.empty(PADDING)
+    layout = BoxLayout(this, BoxLayout.Y_AXIS)
+    add(createIntroductionMessage)
+    add(scrollPanel)
+    add(buttonPanel)
+    updateDisplayName(null)
   }
 
-  private fun createGreetings(): String {
+  fun updateDisplayName(displayName: String?) {
+    val userDisplayName = displayName?.let { truncateDisplayName(it) }
+    createIntroductionMessage.text = buildString {
+      append("<html><body><h2>${createGreetings(userDisplayName)}</h2>")
+      append("<p>Let's start by getting you familiar with all the possibilities Cody provides:</p>")
+      append("</body></html>")
+    }
+  }
+
+  private fun createGreetings(userDisplayName: String?): String {
     if (!userDisplayName.isNullOrEmpty()) {
       return "Hi, $userDisplayName"
     }
@@ -53,14 +70,9 @@ class CodyOnboardingGuidancePanel(val originalDisplayName: String?) : JPanel() {
   }
 
   private fun createIntroductionMessage(): JEditorPane {
-    val introductionMessage = createHtmlViewer(UIUtil.getPanelBackground())
+    val introductionMessage = createHtmlViewer(project)
     val introductionMessageEditorKit = introductionMessage.editorKit as HTMLEditorKit
     introductionMessageEditorKit.styleSheet.addRule(paragraphColorStyle)
-    introductionMessage.text = buildString {
-      append("<html><body><h2>${createGreetings()}</h2>")
-      append("<p>Let's start by getting you familiar with all the possibilities Cody provides:</p>")
-      append("</body></html>")
-    }
     introductionMessage.setMargin(JBUI.emptyInsets())
     introductionMessage.preventStretching()
     return introductionMessage
@@ -129,7 +141,7 @@ class CodyOnboardingGuidancePanel(val originalDisplayName: String?) : JPanel() {
   }
 
   private fun createInfoSection(): JEditorPane {
-    val sectionInfo = createHtmlViewer(UIUtil.getPanelBackground())
+    val sectionInfo = createHtmlViewer(project)
     val sectionInfoHtmlEditorKit = sectionInfo.editorKit as HTMLEditorKit
     sectionInfoHtmlEditorKit.styleSheet.addRule(paragraphColorStyle)
     sectionInfoHtmlEditorKit.styleSheet.addRule("""h3 { margin-top: 0;}""")

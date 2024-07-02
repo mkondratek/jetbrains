@@ -17,7 +17,7 @@ public interface Icons {
   }
 
   interface StatusBar {
-    Icon CompletionInProgress = new AnimatedIcon.Default();
+    Icon CompletionInProgress = AnimatedIcon.Default.INSTANCE;
     Icon CodyAvailable = IconLoader.getIcon("/icons/codyLogoMonochromatic.svg", Icons.class);
     Icon CodyAutocompleteDisabled =
         IconLoader.getIcon("/icons/cody-logo-heavy-slash.svg", Icons.class);
@@ -50,8 +50,10 @@ public interface Icons {
 
   interface LLM {
     Icon Anthropic = IconLoader.getIcon("/icons/chat/llm/anthropic.svg", Icons.class);
+    Icon Google = IconLoader.getIcon("/icons/chat/llm/google.svg", Icons.class);
     Icon OpenAI = IconLoader.getIcon("/icons/chat/llm/openai.svg", Icons.class);
     Icon Mistral = IconLoader.getIcon("/icons/chat/llm/mistral.svg", Icons.class);
+    Icon Ollama = IconLoader.getIcon("/icons/chat/llm/ollama.svg", Icons.class);
     Icon ProSticker = IconLoader.getIcon("/icons/chat/llm/pro_sticker.svg", Icons.class);
   }
 }

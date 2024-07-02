@@ -1,35 +1,30 @@
 package com.sourcegraph.cody.chat;
 
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.editor.CaretModel;
-import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.editor.EditorFactory;
-import com.intellij.openapi.editor.EditorSettings;
-import com.intellij.openapi.editor.event.DocumentEvent;
-import com.intellij.openapi.editor.event.DocumentListener;
-import com.intellij.openapi.editor.event.EditorMouseEvent;
-import com.intellij.openapi.editor.event.EditorMouseListener;
-import com.intellij.openapi.editor.event.EditorMouseMotionListener;
+import com.intellij.openapi.editor.*;
+import com.intellij.openapi.editor.event.*;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.util.ui.JBInsets;
 import com.sourcegraph.cody.chat.ui.CodeEditorButtons;
 import com.sourcegraph.cody.chat.ui.CodeEditorPart;
+import com.sourcegraph.cody.telemetry.TelemetryV2;
 import com.sourcegraph.cody.ui.AttributionButtonController;
 import com.sourcegraph.cody.ui.TransparentButton;
 import com.sourcegraph.telemetry.GraphQlLogger;
-import java.awt.Dimension;
-import java.awt.Insets;
-import java.awt.Toolkit;
+import java.awt.*;
 import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
-import java.awt.event.*;
+import java.awt.event.ActionListener;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.time.Duration;
+import java.util.Objects;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import org.jetbrains.annotations.NotNull;
@@ -157,6 +152,26 @@ public class CodeEditorFactory {
           }
         };
 
+    CopyPasteManager.getInstance()
+        .addContentChangedListener(
+            (oldTransferable, newTransferable) -> {
+              try {
+                String copiedString =
+                    newTransferable.getTransferData(DataFlavor.stringFlavor).toString();
+                String selectedText = editor.getSelectionModel().getSelectedText();
+                // Unfortunately there is no easy way to check if origin of the copied text, so we
+                // are checking if copied text is matching a text selected in the component
+                if (Objects.equals(selectedText, copiedString)) {
+                  lastCopiedText = selectedText;
+                  TelemetryV2.Companion.sendCodeGenerationEvent(
+                      project, "keyDown.Copy", "clicked", lastCopiedText);
+                }
+              } catch (Exception e) {
+                logger.warn("Unable to process copied text", e);
+              }
+            },
+            project);
+
     editor.addEditorMouseMotionListener(editorMouseMotionListener);
     editor.addEditorMouseListener(editorMouseListener);
     CodeEditorPart codeEditorPart =
@@ -179,9 +194,8 @@ public class CodeEditorFactory {
       timer.start();
 
       lastCopiedText = text;
-      ApplicationManager.getApplication()
-          .executeOnPooledThread(
-              () -> GraphQlLogger.logCodeGenerationEvent(project, "copyButton", "clicked", text));
+      GraphQlLogger.logCodeGenerationEvent(project, "copyButton", "clicked", text);
+      TelemetryV2.Companion.sendCodeGenerationEvent(project, "copyButton", "clicked", text);
     };
   }
 
@@ -209,10 +223,8 @@ public class CodeEditorFactory {
               }
             });
 
-        ApplicationManager.getApplication()
-            .executeOnPooledThread(
-                () ->
-                    GraphQlLogger.logCodeGenerationEvent(project, "insertButton", "clicked", text));
+        GraphQlLogger.logCodeGenerationEvent(project, "insertButton", "clicked", text);
+        TelemetryV2.Companion.sendCodeGenerationEvent(project, "insertButton", "clicked", text);
       }
     };
   }

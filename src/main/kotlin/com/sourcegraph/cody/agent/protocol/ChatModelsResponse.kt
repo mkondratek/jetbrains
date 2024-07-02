@@ -9,13 +9,16 @@ data class ChatModelsResponse(val models: List<ChatModelProvider>) {
       val codyProOnly: Boolean,
       val provider: String?,
       val title: String?,
-      val model: String
+      val model: String,
+      val deprecated: Boolean = false
   ) {
     fun getIcon(): Icon? =
         when (provider) {
           "Anthropic" -> Icons.LLM.Anthropic
           "OpenAI" -> Icons.LLM.OpenAI
           "Mistral" -> Icons.LLM.Mistral
+          "Google" -> Icons.LLM.Google
+          "Ollama" -> Icons.LLM.Ollama
           else -> null
         }
 

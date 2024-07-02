@@ -30,6 +30,7 @@ import com.sourcegraph.cody.history.HistoryService
 import com.sourcegraph.cody.history.state.ChatState
 import com.sourcegraph.cody.history.state.EnhancedContextState
 import com.sourcegraph.cody.history.state.MessageState
+import com.sourcegraph.cody.telemetry.TelemetryV2
 import com.sourcegraph.cody.vscode.CancellationToken
 import com.sourcegraph.common.CodyBundle
 import com.sourcegraph.common.CodyBundle.fmt
@@ -115,21 +116,15 @@ private constructor(
                   addEnhancedContext = chatPanel.isEnhancedContextEnabled(),
                   contextFiles = contextItems)
 
-          try {
-            val request =
-                agent.server.chatSubmitMessage(
-                    ChatSubmitMessageParams(connectionId.get().get(), message))
+          val request =
+              agent.server.chatSubmitMessage(
+                  ChatSubmitMessageParams(connectionId.get().get(), message))
 
-            GraphQlLogger.logCodyEvent(project, "chat-question", "submitted")
+          GraphQlLogger.logCodyEvent(project, "chat-question", "submitted")
 
-            createCancellationToken(
-                onCancel = { request.cancel(true) },
-                onFinish = { GraphQlLogger.logCodyEvent(project, "chat-question", "executed") })
-          } catch (e: Exception) {
-            createCancellationToken(onCancel = {}, onFinish = {})
-            handleException(e)
-            throw e
-          }
+          createCancellationToken(
+              onCancel = { request.cancel(true) },
+              onFinish = { GraphQlLogger.logCodyEvent(project, "chat-question", "executed") })
         },
         onFailure = { e ->
           createCancellationToken(onCancel = {}, onFinish = {})
@@ -178,9 +173,14 @@ private constructor(
               else -> CodyBundle.getString("chat.rate-limit-error.explain")
             }
           } else {
-            val errorReportLink = CodyErrorSubmitter().getEncodedUrl(chatError.message)
+            val errorReportLink = CodyErrorSubmitter().getEncodedUrl(project, chatError.message)
             CodyBundle.getString("chat.general-error").fmt(errorReportLink, chatError.message)
           }
+
+      val feature =
+          if (rateLimitError?.upgradeIsAvailable == true) "upsellUsageLimitCTA"
+          else "abuseUsageLimitCTA"
+      TelemetryV2.sendTelemetryEvent(project, feature, "shown")
 
       addErrorMessageAsAssistantMessage(errorMessage)
     } finally {
@@ -193,7 +193,8 @@ private constructor(
       CodyAgentService.setAgentError(project, e)
 
       val message = ((e.cause as? CodyAgentException) ?: e).message ?: e.toString()
-      val errorReportLink = CodyErrorSubmitter().getEncodedUrl(e.getThrowableText(), message)
+      val errorReportLink =
+          CodyErrorSubmitter().getEncodedUrl(project, e.getThrowableText(), message)
       addErrorMessageAsAssistantMessage(
           CodyBundle.getString("chat.general-error").fmt(errorReportLink, message))
     } finally {
@@ -276,22 +277,17 @@ private constructor(
     connectionId.getAndSet(newConnectionId)
 
     // Update the context view, controller, and Agent-side state.
-    if (CodyAuthenticationManager.getInstance(project).getActiveAccount()?.isDotcomAccount() ==
-        false) {
+    if (CodyAuthenticationManager.getInstance(project).account?.isDotcomAccount() == false) {
       chatPanel.contextView.updateFromSavedState(state.enhancedContext ?: EnhancedContextState())
     }
   }
 
   companion object {
     @RequiresEdt
-    fun createNew(
-        project: Project,
-        runWithConnectionId: (ConnectionId) -> Unit = {}
-    ): AgentChatSession {
+    fun createNew(project: Project): AgentChatSession {
       val connectionId = createNewPanel(project) { it.server.chatNew() }
       val chatSession = AgentChatSession(project, connectionId)
       AgentChatSessionService.getInstance(project).addSession(chatSession)
-      connectionId.thenApply(runWithConnectionId::invoke)
       return chatSession
     }
 

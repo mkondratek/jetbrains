@@ -1,6 +1,7 @@
 package com.sourcegraph.cody.agent
 
 import com.intellij.ide.plugins.PluginManagerCore
+import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.extensions.PluginId
@@ -111,6 +112,7 @@ private constructor(
               .initialize(
                   ClientInfo(
                       version = ConfigUtil.getPluginVersion(),
+                      ideVersion = ApplicationInfo.getInstance().build.toString(),
                       workspaceRootUri =
                           ConfigUtil.getWorkspaceRootPath(project).toUri().toString(),
                       extensionConfiguration = ConfigUtil.getAgentConfiguration(project),
@@ -175,6 +177,8 @@ private constructor(
         processBuilder.environment()["CODY_LOG_EVENT_MODE"] = "connected-instance-only"
       }
 
+      configureIntegrationTestingProcess(processBuilder)
+
       val proxy = HttpConfigurable.getInstance()
       val proxyUrl = proxy.PROXY_HOST + ":" + proxy.PROXY_PORT
       if (proxy.USE_HTTP_PROXY) {
@@ -213,6 +217,38 @@ private constructor(
           .start()
 
       return AgentConnection.ProcessConnection(process)
+    }
+
+    private fun configureIntegrationTestingProcess(processBuilder: ProcessBuilder) {
+      // N.B. Do not set CODY_TESTING=true -- that is for Agent-side tests.
+      if (!ConfigUtil.isIntegrationTestModeEnabled()) return
+
+      processBuilder.environment().apply {
+        // N.B. If you set CODY_RECORDING_MODE, you must set CODY_RECORDING_DIRECTORY,
+        // or the Agent will throw an error and your test will fail.
+        when (val mode = System.getenv("CODY_RECORDING_MODE")) {
+          null -> {
+            logger.warn(
+                """Polly is not enabled for this test.
+                   Set CODY_RECORDING_MODE and CODY_RECORDING_DIRECTORY
+                   variables to turn on Polly."""
+                    .trimMargin())
+          }
+          "record",
+          "replay",
+          "passthrough" -> {
+            logger.warn("Cody integration test recording mode: $mode")
+
+            this["DISABLE_UPSTREAM_HEALTH_PINGS"] = "true"
+            this["DISABLE_FEATURE_FLAGS"] = "true"
+
+            System.getenv()
+                .filter { it.key.startsWith("CODY_") }
+                .forEach { (key, value) -> this[key] = value }
+          }
+          else -> throw CodyAgentException("Unknown CODY_RECORDING_MODE: $mode")
+        }
+      }
     }
 
     @Throws(IOException::class, CodyAgentException::class)
@@ -290,17 +326,19 @@ private constructor(
           // in the plugin directory.
           Files.deleteIfExists(binaryTarget)
         }
-        logger.info("extracting Node binary to " + binaryTarget.toAbsolutePath())
+        logger.info("Extracting Node binary to " + binaryTarget.toAbsolutePath())
         Files.copy(binarySource, binaryTarget, StandardCopyOption.REPLACE_EXISTING)
         val binary = binaryTarget.toFile()
         if (binary.setExecutable(true)) {
           binary
         } else {
-          throw CodyAgentException("failed to make executable " + binary.absolutePath)
+          throw CodyAgentException("Failed to make Node process executable " + binary.absolutePath)
         }
-      } catch (e: IOException) {
+      } catch (e: Exception) {
+        logger.warn(e)
+        logger.info("Failed to create a copy of the Node binary, proceeding with $binarySource")
         Files.deleteIfExists(binaryTarget)
-        throw CodyAgentException("failed to create Node binary", e)
+        binarySource.toFile()
       }
     }
 

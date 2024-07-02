@@ -1,6 +1,5 @@
 package com.sourcegraph.cody.chat.ui
 
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.invokeLater
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
@@ -25,21 +24,15 @@ class LlmDropdown(
     private val project: Project,
     private val onSetSelectedItem: (ChatModelsResponse.ChatModelProvider) -> Unit,
     val parentDialog: EditCommandPrompt?,
-    chatModelProviderFromState: ChatModelsResponse.ChatModelProvider?,
+    val chatModelProviderFromState: ChatModelsResponse.ChatModelProvider?,
 ) : ComboBox<ChatModelsResponse.ChatModelProvider>(MutableCollectionComboBoxModel()) {
-
-  var isCurrentUserFree = true
 
   init {
     renderer = LlmComboBoxRenderer(this)
     isVisible = false
     isOpaque = false
 
-    if (chatModelProviderFromState != null) {
-      updateModelsInUI(listOf(chatModelProviderFromState))
-    } else {
-      updateModels()
-    }
+    updateModels()
   }
 
   private fun updateModels() {
@@ -56,27 +49,24 @@ class LlmDropdown(
   private fun updateModelsInUI(models: List<ChatModelsResponse.ChatModelProvider>) {
     if (project.isDisposed) return
 
-    models.sortedBy { it.codyProOnly }.forEach(::addItem)
+    models.filterNot { it.deprecated }.sortedBy { it.codyProOnly }.forEach(::addItem)
 
-    CodyAuthenticationManager.getInstance(project).getActiveAccountTier().thenApply { accountTier ->
-      if (accountTier == null) return@thenApply
-      isCurrentUserFree = accountTier == AccountTier.DOTCOM_FREE
-
-      val selectedModel = HistoryService.getInstance(project).getDefaultLlm()
-      val defaultModel =
-          if (accountTier == AccountTier.DOTCOM_PRO)
-              models.find { it.model == selectedModel?.model } ?: models.find { it.default }
-          else models.find { it.default }
-
-      ApplicationManager.getApplication().invokeLater { selectedItem = defaultModel }
-    }
+    val selectedFromState = chatModelProviderFromState
+    val selectedFromHistory = HistoryService.getInstance(project).getDefaultLlm()
+    selectedItem =
+        models.find { it.model == selectedFromState?.model && !it.deprecated }
+            ?: models.find { it.model == selectedFromHistory?.model && !it.deprecated }
+            ?: models.find { it.default }
 
     val isEnterpriseAccount =
-        CodyAuthenticationManager.getInstance(project).getActiveAccount()?.isEnterpriseAccount()
-            ?: false
+        CodyAuthenticationManager.getInstance(project).account?.isEnterpriseAccount() ?: false
 
-    if (model.size <= 1) isEnabled = false
+    // If the dropdown is already disabled, don't change it. It can happen
+    // in the case of the legacy commands (updateAfterFirstMessage happens before this call).
+    isEnabled = isEnabled && chatModelProviderFromState == null
     isVisible = !isEnterpriseAccount
+    setMaximumRowCount(15)
+
     revalidate()
   }
 
@@ -89,7 +79,7 @@ class LlmDropdown(
     if (project.isDisposed) return
     val modelProvider = anObject as? ChatModelsResponse.ChatModelProvider
     if (modelProvider != null) {
-      if (modelProvider.codyProOnly && isCurrentUserFree) {
+      if (modelProvider.codyProOnly && isCurrentUserFree()) {
         BrowserOpener.openInBrowser(project, "https://sourcegraph.com/cody/subscription")
         return
       }
@@ -101,11 +91,17 @@ class LlmDropdown(
     }
   }
 
+  fun isCurrentUserFree(): Boolean {
+    return CodyAuthenticationManager.getInstance(project)
+        .getActiveAccountTier()
+        .getNow(AccountTier.DOTCOM_FREE) === AccountTier.DOTCOM_FREE
+  }
+
   @RequiresEdt
   fun updateAfterFirstMessage() {
     isEnabled = false
 
-    val activeAccountType = CodyAuthenticationManager.getInstance(project).getActiveAccount()
+    val activeAccountType = CodyAuthenticationManager.getInstance(project).account
     if (activeAccountType?.isDotcomAccount() == true) {
       toolTipText = CodyBundle.getString("LlmDropdown.disabled.text")
     }

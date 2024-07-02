@@ -23,6 +23,7 @@ import com.sourcegraph.cody.agent.protocol.IgnorePolicySpec
 import com.sourcegraph.cody.agent.protocol.IgnoreTestParams
 import com.sourcegraph.cody.agent.protocol.IgnoreTestResponse
 import com.sourcegraph.cody.agent.protocol.InlineEditParams
+import com.sourcegraph.cody.agent.protocol.NetworkRequest
 import com.sourcegraph.cody.agent.protocol.ProtocolTextDocument
 import com.sourcegraph.cody.agent.protocol.RemoteRepoHasParams
 import com.sourcegraph.cody.agent.protocol.RemoteRepoHasResponse
@@ -30,6 +31,7 @@ import com.sourcegraph.cody.agent.protocol.RemoteRepoListParams
 import com.sourcegraph.cody.agent.protocol.RemoteRepoListResponse
 import com.sourcegraph.cody.agent.protocol.ServerInfo
 import com.sourcegraph.cody.agent.protocol.TaskIdParam
+import com.sourcegraph.cody.agent.protocol.TelemetryEvent
 import com.sourcegraph.cody.chat.ConnectionId
 import java.util.concurrent.CompletableFuture
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification
@@ -50,6 +52,9 @@ interface CodyAgentServer {
   @JsonRequest("autocomplete/execute")
   fun autocompleteExecute(params: AutocompleteParams?): CompletableFuture<AutocompleteResult>
 
+  @JsonRequest("telemetry/recordEvent")
+  fun recordEvent(event: TelemetryEvent): CompletableFuture<Void?>
+
   @JsonRequest("graphql/logEvent") fun logEvent(event: Event): CompletableFuture<Void?>
 
   @JsonRequest("graphql/currentUserId") fun currentUserId(): CompletableFuture<String>
@@ -59,8 +64,6 @@ interface CodyAgentServer {
 
   @JsonRequest("featureFlags/getFeatureFlag")
   fun evaluateFeatureFlag(flagName: GetFeatureFlag): CompletableFuture<Boolean?>
-
-  @JsonRequest("graphql/currentUserIsPro") fun isCurrentUserPro(): CompletableFuture<Boolean>
 
   @JsonRequest("graphql/getCurrentUserCodySubscription")
   fun getCurrentUserCodySubscription(): CompletableFuture<CurrentUserCodySubscription?>
@@ -149,4 +152,7 @@ interface CodyAgentServer {
 
   @JsonRequest("testing/ignore/overridePolicy")
   fun testingIgnoreOverridePolicy(params: IgnorePolicySpec?): CompletableFuture<Unit>
+
+  @JsonRequest("testing/requestErrors")
+  fun testingRequestErrors(): CompletableFuture<List<NetworkRequest>>
 }

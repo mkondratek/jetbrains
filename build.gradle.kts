@@ -50,22 +50,28 @@ val skippedFailureLevels =
 
 plugins {
   id("java")
-  // Dependencies are locked at this version to work with JDK 11 on CI.
-  id("org.jetbrains.kotlin.jvm") version "1.9.22"
+  id("jvm-test-suite")
+  id("org.jetbrains.kotlin.jvm") version "1.9.24"
   id("org.jetbrains.intellij") version "1.17.3"
-  id("org.jetbrains.changelog") version "1.3.1"
+  id("org.jetbrains.changelog") version "2.2.0"
   id("com.diffplug.spotless") version "6.25.0"
 }
+
+val platformVersion: String by project
+val javaVersion: String by project
 
 group = properties("pluginGroup")
 
 version = properties("pluginVersion")
 
-repositories { mavenCentral() }
+repositories {
+  maven { url = uri("https://www.jetbrains.com/intellij-repository/releases") }
+  mavenCentral()
+}
 
 intellij {
   pluginName.set(properties("pluginName"))
-  version.set(properties("platformVersion"))
+  version.set(platformVersion)
   type.set(properties("platformType"))
 
   // Plugin Dependencies. Uses `platformPlugins` property from the gradle.properties file.
@@ -78,11 +84,15 @@ dependencies {
   // ActionUpdateThread.jar contains copy of the
   // com.intellij.openapi.actionSystem.ActionUpdateThread class
   compileOnly(files("libs/ActionUpdateThread.jar"))
-  implementation("org.commonmark:commonmark:0.21.0")
-  implementation("org.commonmark:commonmark-ext-gfm-tables:0.21.0")
-  implementation("org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.21.0")
-  implementation("com.googlecode.java-diff-utils:diffutils:1.3.0")
-  testImplementation("org.awaitility:awaitility-kotlin:4.2.0")
+  implementation("org.commonmark:commonmark:0.22.0")
+  implementation("org.commonmark:commonmark-ext-gfm-tables:0.22.0")
+  implementation("org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.23.1")
+  implementation("io.github.java-diff-utils:java-diff-utils:4.12")
+  testImplementation("org.awaitility:awaitility-kotlin:4.2.1")
+  testImplementation("org.mockito:mockito-core:5.12.0")
+  testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+  testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.0.0")
+  testImplementation("org.mockito.kotlin:mockito-kotlin:5.3.1")
 }
 
 spotless {
@@ -100,6 +110,7 @@ spotless {
     ktfmt()
     trimTrailingWhitespace()
     target("src/**/*.kt")
+    toggleOffOn()
   }
 }
 
@@ -111,6 +122,8 @@ java {
     languageVersion.set(JavaLanguageVersion.of(properties("javaVersion").toInt()))
   }
 }
+
+tasks.named("classpathIndexCleanup") { dependsOn("compileIntegrationTestKotlin") }
 
 fun download(url: String, output: File) {
   if (output.exists()) {
@@ -184,8 +197,42 @@ fun unzip(input: File, output: File, excludeMatcher: PathMatcher? = null) {
   }
 }
 
-val githubArchiveCache =
+val githubArchiveCache: File =
     Paths.get(System.getProperty("user.home"), ".sourcegraph", "caches", "jetbrains").toFile()
+
+fun Test.sharedIntegrationTestConfig(buildCodyDir: File, mode: String) {
+  group = "verification"
+  testClassesDirs = sourceSets["integrationTest"].output.classesDirs
+  classpath = sourceSets["integrationTest"].runtimeClasspath
+
+  include("**/AllSuites.class")
+
+  val resourcesDir = project.file("src/integrationTest/resources")
+  systemProperties(
+      "cody-agent.trace-path" to "$buildDir/sourcegraph/cody-agent-trace.json",
+      "cody-agent.directory" to buildCodyDir.parent,
+      "sourcegraph.verbose-logging" to "true",
+      "cody.autocomplete.enableFormatting" to
+          (project.property("cody.autocomplete.enableFormatting") as String? ?: "true"),
+      "cody.integration.testing" to "true",
+      "cody.ignore.policy.timeout" to 500, // Increased to 500ms as CI tends to be slower
+      "idea.test.execution.policy" to "com.sourcegraph.cody.test.NonEdtIdeaTestExecutionPolicy",
+      "test.resources.dir" to resourcesDir.absolutePath)
+
+  environment(
+      "CODY_RECORDING_MODE" to mode,
+      "CODY_RECORDING_NAME" to "integration-test",
+      "CODY_RECORDING_DIRECTORY" to resourcesDir.resolve("recordings").absolutePath,
+      "CODY_SHIM_TESTING" to "true",
+      "CODY_TEMPERATURE_ZERO" to "true",
+      "CODY_TELEMETRY_EXPORTER" to "testing",
+      // Fastpass has custom bearer tokens that are difficult to record with Polly
+      "CODY_DISABLE_FASTPATH" to "true",
+  )
+
+  useJUnit()
+  dependsOn("buildCody")
+}
 
 tasks {
   val codeSearchCommit = "9d86a4f7d183e980acfe5d6b6468f06aaa0d8acf"
@@ -281,17 +328,14 @@ tasks {
       commandLine("pnpm", "run", "build:agent")
     }
     copy {
-      from(agentDir.resolve("dist")) {
-        include("index.js")
-        include("index.js.map")
-        include("*.wasm")
-      }
+      from(agentDir.resolve("dist"))
       into(buildCodyDir)
     }
 
     copy {
       from(downloadNodeBinaries())
       into(buildCodyDir)
+      eachFile { permissions { unix("rwxrwxrwx") } }
     }
 
     return buildCodyDir
@@ -332,8 +376,6 @@ tasks {
     }
     withType<KotlinCompile> { kotlinOptions.jvmTarget = it }
   }
-
-  wrapper { gradleVersion = properties("gradleVersion") }
 
   patchPluginXml {
     version.set(properties("pluginVersion"))
@@ -385,6 +427,11 @@ tasks {
         assertExists("node-win-x64.exe")
       }
     }
+  }
+
+  patchPluginXml {
+    sinceBuild = properties("pluginSinceBuild")
+    untilBuild = properties("pluginUntilBuild")
   }
 
   runIde {
@@ -442,9 +489,56 @@ tasks {
     }
   }
 
-  test {
-    agentProperties.forEach { (key, value) -> systemProperty(key, value) }
+  test { dependsOn(project.tasks.getByPath("buildCody")) }
 
-    dependsOn(project.tasks.getByPath("buildCody"))
+  configurations {
+    create("integrationTestImplementation") { extendsFrom(configurations.testImplementation.get()) }
+    create("integrationTestRuntimeClasspath") { extendsFrom(configurations.testRuntimeOnly.get()) }
+  }
+
+  sourceSets {
+    create("integrationTest") {
+      kotlin.srcDir("src/integrationTest/kotlin")
+      compileClasspath += main.get().output
+      runtimeClasspath += main.get().output
+    }
+  }
+
+  register<Test>("integrationTest") {
+    description = "Runs the integration tests."
+    sharedIntegrationTestConfig(buildCodyDir, "replay")
+    dependsOn("processIntegrationTestResources")
+  }
+
+  register<Test>("passthroughIntegrationTest") {
+    description = "Runs the integration tests, passing everything through to the LLM."
+    sharedIntegrationTestConfig(buildCodyDir, "passthrough")
+    dependsOn("processIntegrationTestResources")
+  }
+
+  register<Test>("recordingIntegrationTest") {
+    description = "Runs the integration tests and records the responses."
+    sharedIntegrationTestConfig(buildCodyDir, "record")
+    dependsOn("processIntegrationTestResources")
+  }
+
+  named<Copy>("processIntegrationTestResources") {
+    from(sourceSets["integrationTest"].resources)
+    into("$buildDir/resources/integrationTest")
+    exclude("**/.idea/**")
+    exclude("**/*.xml")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+  }
+
+  withType<Test> { systemProperty("idea.test.src.dir", "$buildDir/resources/integrationTest") }
+
+  named("classpathIndexCleanup") { dependsOn("processIntegrationTestResources") }
+
+  named("check") { dependsOn("integrationTest") }
+
+  test {
+    jvmArgs("-Didea.ProcessCanceledException=disabled")
+    agentProperties.forEach { (key, value) -> systemProperty(key, value) }
+    dependsOn("buildCody")
   }
 }

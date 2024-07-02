@@ -4,8 +4,9 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.PlatformCoreDataKeys
 import com.intellij.openapi.wm.ToolWindowManager
 import com.sourcegraph.cody.CodyToolWindowFactory
+import com.sourcegraph.cody.config.CodyAuthenticationManager
 import com.sourcegraph.cody.config.CodyPersistentAccountsHost
-import com.sourcegraph.cody.config.signInWithSourcegrapDialog
+import com.sourcegraph.cody.config.signInWithSourcegraphDialog
 import com.sourcegraph.common.ui.DumbAwareEDTAction
 import com.sourcegraph.config.ConfigUtil
 import java.awt.Dimension
@@ -16,14 +17,13 @@ class SignInWithEnterpriseInstanceAction(
   override fun actionPerformed(e: AnActionEvent) {
     val project = e.project ?: return
     val accountsHost = CodyPersistentAccountsHost(project)
+    val authManager = CodyAuthenticationManager.getInstance(project)
+    val serverUrl = authManager.account?.server?.url ?: defaultServer
     val dialog =
-        signInWithSourcegrapDialog(
-                project,
-                e.getData(PlatformCoreDataKeys.CONTEXT_COMPONENT),
-                accountsHost::isAccountUnique)
+        signInWithSourcegraphDialog(project, e.getData(PlatformCoreDataKeys.CONTEXT_COMPONENT))
             .apply {
               contentPane.minimumSize = Dimension(MIN_DIALOG_WIDTH, MIN_DIALOG_HEIGHT)
-              setServer(defaultServer)
+              setServer(serverUrl)
             }
     if (dialog.showAndGet()) {
       accountsHost.addAccount(

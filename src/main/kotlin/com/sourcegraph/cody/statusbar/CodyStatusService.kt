@@ -46,10 +46,11 @@ class CodyStatusService(val project: Project) : Disposable {
     synchronized(this) {
       val oldStatus = status
       val service = ApplicationManager.getApplication().getService(CodyAccountManager::class.java)
+      val authManager = CodyAuthenticationManager.getInstance(project)
+      val isTokenInvalid = authManager.getIsTokenInvalid().getNow(null) == true
+
       val token =
-          CodyAuthenticationManager.getInstance(project)
-              .getActiveAccount()
-              ?.let(service::findCredentials)
+          CodyAuthenticationManager.getInstance(project).account?.let(service::findCredentials)
       status =
           if (!ConfigUtil.isCodyEnabled()) {
             CodyStatus.CodyDisabled
@@ -66,6 +67,8 @@ class CodyStatusService(val project: Project) : Disposable {
           } else if (UpgradeToCodyProNotification.autocompleteRateLimitError.get() != null ||
               UpgradeToCodyProNotification.chatRateLimitError.get() != null) {
             CodyStatus.RateLimitError
+          } else if (isTokenInvalid) {
+            CodyStatus.CodyInvalidToken
           } else {
             CodyStatus.Ready
           }
@@ -102,12 +105,16 @@ class CodyStatusService(val project: Project) : Disposable {
 
     @JvmStatic
     fun notifyApplication(project: Project, status: CodyStatus) {
-      getInstance(project).onCodyAutocompleteStatus(status)
+      if (!project.isDisposed) {
+        getInstance(project).onCodyAutocompleteStatus(status)
+      }
     }
 
     @JvmStatic
     fun resetApplication(project: Project) {
-      getInstance(project).onCodyAutocompleteStatusReset()
+      if (!project.isDisposed) {
+        getInstance(project).onCodyAutocompleteStatusReset()
+      }
     }
   }
 }

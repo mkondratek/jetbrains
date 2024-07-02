@@ -2,6 +2,7 @@ package com.sourcegraph.cody.agent
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -12,6 +13,7 @@ import com.sourcegraph.cody.chat.AgentChatSessionService
 import com.sourcegraph.cody.config.CodyApplicationSettings
 import com.sourcegraph.cody.context.RemoteRepoSearcher
 import com.sourcegraph.cody.edit.FixupService
+import com.sourcegraph.cody.edit.sessions.CodyEditingNotAvailableException
 import com.sourcegraph.cody.error.CodyConsole
 import com.sourcegraph.cody.ignore.IgnoreOracle
 import com.sourcegraph.cody.listeners.CodyFileEditorListener
@@ -25,7 +27,6 @@ import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicReference
 import java.util.function.Consumer
 import java.util.function.Function
-import kotlinx.coroutines.runBlocking
 
 @Service(Service.Level.PROJECT)
 class CodyAgentService(private val project: Project) : Disposable {
@@ -84,6 +85,10 @@ class CodyAgentService(private val project: Project) : Disposable {
         try {
           activeSession?.performWorkspaceEdit(params)
           true
+        } catch (e: CodyEditingNotAvailableException) {
+          runInEdt { EditingNotAvailableNotification().notify(project) }
+          activeSession?.dispose()
+          false
         } catch (e: RuntimeException) {
           activeSession?.dispose()
           logger.error(e)
@@ -97,6 +102,10 @@ class CodyAgentService(private val project: Project) : Disposable {
           activeSession?.updateEditorIfNeeded(params.uri)
           activeSession?.performInlineEdits(params.edits)
           true
+        } catch (e: CodyEditingNotAvailableException) {
+          runInEdt { EditingNotAvailableNotification().notify(project) }
+          activeSession?.dispose()
+          false
         } catch (e: RuntimeException) {
           activeSession?.dispose()
           logger.error(e)
@@ -138,7 +147,9 @@ class CodyAgentService(private val project: Project) : Disposable {
       }
 
       agent.client.onDebugMessage = Consumer { message ->
-        CodyConsole.getInstance(project).addMessage(message)
+        if (!project.isDisposed) {
+          CodyConsole.getInstance(project).addMessage(message)
+        }
       }
 
       if (!project.isDisposed) {
@@ -254,32 +265,33 @@ class CodyAgentService(private val project: Project) : Disposable {
     ) {
       if (CodyApplicationSettings.instance.isCodyEnabled) {
         ApplicationManager.getApplication().executeOnPooledThread {
-          runBlocking {
-            val task: suspend (CodyAgent) -> Unit = { agent ->
-              try {
-                callback.accept(agent)
-              } catch (e: Exception) {
-                logger.warn(e)
-                onFailure.accept(e)
-              }
+          try {
+            val instance = getInstance(project)
+            val isReadyButNotFunctional = instance.codyAgent.getNow(null)?.isConnected() == false
+            val agent =
+                if (isReadyButNotFunctional && restartIfNeeded) instance.restartAgent(project)
+                else instance.codyAgent
+            callback.accept(agent.get())
+            setAgentError(project, null)
+          } catch (e: Exception) {
+            logger.warn("Failed to execute call to agent", e)
+            if (restartIfNeeded && e !is ProcessCanceledException) {
+              getInstance(project).restartAgent(project)
             }
-            coWithAgent(project, restartIfNeeded, task)
+            onFailure.accept(e)
+            throw e
           }
         }
       }
     }
 
     @JvmStatic
-    fun withAgent(
-        project: Project,
-        callback: Consumer<CodyAgent>,
-    ) = withAgent(project, restartIfNeeded = false, callback = callback)
+    fun withAgent(project: Project, callback: Consumer<CodyAgent>) =
+        withAgent(project, restartIfNeeded = false, callback = callback)
 
     @JvmStatic
-    fun withAgentRestartIfNeeded(
-        project: Project,
-        callback: Consumer<CodyAgent>,
-    ) = withAgent(project, restartIfNeeded = true, callback = callback)
+    fun withAgentRestartIfNeeded(project: Project, callback: Consumer<CodyAgent>) =
+        withAgent(project, restartIfNeeded = true, callback = callback)
 
     @JvmStatic
     fun withAgentRestartIfNeeded(
@@ -294,35 +306,6 @@ class CodyAgentService(private val project: Project) : Disposable {
         getInstance(project).codyAgent.getNow(null)?.isConnected() == true
       } catch (e: Exception) {
         false
-      }
-    }
-
-    suspend fun <T> coWithAgent(project: Project, callback: suspend (CodyAgent) -> T) =
-        coWithAgent(project, false, callback)
-
-    private suspend fun <T> coWithAgent(
-        project: Project,
-        restartIfNeeded: Boolean,
-        callback: suspend (CodyAgent) -> T
-    ): T {
-      if (!CodyApplicationSettings.instance.isCodyEnabled) {
-        throw Exception("Cody is not enabled")
-      }
-      try {
-        val instance = CodyAgentService.getInstance(project)
-        val isReadyButNotFunctional = instance.codyAgent.getNow(null)?.isConnected() == false
-        val agent =
-            if (isReadyButNotFunctional && restartIfNeeded) instance.restartAgent(project)
-            else instance.codyAgent
-        val result = callback(agent.get())
-        setAgentError(project, null)
-        return result
-      } catch (e: Exception) {
-        logger.warn("Failed to execute call to agent", e)
-        if (restartIfNeeded && e !is ProcessCanceledException) {
-          getInstance(project).restartAgent(project)
-        }
-        throw e
       }
     }
   }
