@@ -29,6 +29,7 @@ jobs:
 #      - name: Gradle Wrapper Validation
 #        uses: gradle/wrapper-validation-action@v3
 #      - run: yarn global add pnpm@8.6.7
+      - run: git describe --tags
       - run: |
           if [ -z "${{ github.event.inputs.cody-commit }}" ]; then
             echo "CODY_COMMIT=$(git ls-remote https://github.com/sourcegraph/cody refs/heads/main | cut -f1)" >> $GITHUB_ENV
