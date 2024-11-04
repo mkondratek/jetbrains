@@ -9,4 +9,7 @@ jobs:
       - run: |
           echo "RELEASE_VERSION=$(./scripts/version-from-git-tag.sh)" >> $GITHUB_ENV
       - run: echo "Publishing version $RELEASE_VERSION"
+      - run:
+          name: Reconfigure origin remote to https
+          command: git remote set-url origin https://${GITHUB_TOKEN}@github.com/mkondratek/jetbrains.git
       - run: git tag -a "RELEASE_VERSION" -m "RELEASE_VERSION" && git push origin "$RELEASE_VERSION"
